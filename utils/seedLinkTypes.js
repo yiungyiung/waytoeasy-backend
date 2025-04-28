@@ -11,6 +11,10 @@ const defaultTypes = [
   { name: "Trello", icon: "https://img.icons8.com/color/48/trello.png" },
   { name: "Other", icon: "https://img.icons8.com/ios-filled/50/link.png" },
   { name: "dropbox", icon: "https://img.icons8.com/ios-filled/50/link.png" },
+  {
+    name: "Google_Doc",
+    icon: "https://img.icons8.com/color/48/google-drive.png",
+  },
 ];
 
 const seedLinkTypes = async () => {

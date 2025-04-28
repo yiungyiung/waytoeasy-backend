@@ -14,7 +14,6 @@ router.get("/github", (req, res) => {
   const clientId = process.env.GITHUB_CLIENT_ID;
   const redirectUri = process.env.GITHUB_REDIRECT_URI;
   const scope = "user:email";
-
   const githubAuthUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}`;
   res.redirect(githubAuthUrl);
 });
