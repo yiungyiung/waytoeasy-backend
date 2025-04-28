@@ -13,7 +13,7 @@ const signToken = (id) => {
 };
 // Create and send Cookie ->
 const createSendToken = (user, statusCode, res) => {
-  const token = signToken(user.id);
+  const token = signToken(user._id);
 
   const cookieOptions = {
     expires: new Date(Date.now() + +process.env.JWT_COOKIE_EXPIRES_IN),
@@ -45,17 +45,31 @@ exports.googleAuth = catchAsync(async (req, res, next) => {
 
   try {
     const decoded = jwt.decode(credential);
-    const { email, name, picture } = decoded;
+    const { email, name, picture, sub: googleId } = decoded;
 
     let user = await User.findOne({ email });
 
     if (!user) {
+      // Create new user
       user = await User.create({
         name,
         email,
-        googleId: decoded.sub,
+        googleId,
         picture,
+        authMethods: ["google"]
       });
+    } else {
+      // Update existing user
+      if (!user.googleId) {
+        user.googleId = googleId;
+      }
+      if (!user.authMethods.includes("google")) {
+        user.authMethods.push("google");
+      }
+      if (!user.picture) {
+        user.picture = picture;
+      }
+      await user.save();
     }
 
     createSendToken(user, 200, res);
@@ -93,7 +107,7 @@ exports.githubAuth = async (req, res) => {
       },
     });
 
-    const { login, name, email } = userResponse.data;
+    const { login, name, email, id: githubId, avatar_url: picture } = userResponse.data;
 
     // Get user's email if not provided in the initial response
     let userEmail = email;
@@ -118,34 +132,25 @@ exports.githubAuth = async (req, res) => {
       user = await User.create({
         name: name || login,
         email: userEmail,
-        password: Math.random().toString(36).slice(-8), // Generate random password
-        authMethod: "github",
+        githubId,
+        picture,
+        authMethods: ["github"]
       });
-    } else if (user.authMethod !== "github") {
-      // Update existing user's auth method
-      user.authMethod = "github";
+    } else {
+      // Update existing user
+      if (!user.githubId) {
+        user.githubId = githubId;
+      }
+      if (!user.authMethods.includes("github")) {
+        user.authMethods.push("github");
+      }
+      if (!user.picture) {
+        user.picture = picture;
+      }
       await user.save();
     }
 
-    // Generate JWT token
-    const token = jwt.sign(
-      { id: user._id, email: user.email },
-      process.env.JWT_SECRET,
-      { expiresIn: "1d" }
-    );
-
-    res.status(200).json({
-      success: true,
-      token,
-      data: {
-        user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          authMethod: user.authMethod,
-        },
-      },
-    });
+    createSendToken(user, 200, res);
   } catch (error) {
     console.error("GitHub authentication error:", error);
     res.status(500).json({

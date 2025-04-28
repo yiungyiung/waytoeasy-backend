@@ -26,6 +26,73 @@ const UserSchema = new mongoose.Schema(
       required: false,
       index: true
     },
+    googleAccessToken: {
+      type: String,
+      required: false,
+      select: false
+    },
+    googleRefreshToken: {
+      type: String,
+      required: false,
+      select: false
+    },
+    googleTokenExpiry: {
+      type: Date,
+      required: false
+    },
+    googleScopes: [{
+      type: String,
+      required: false
+    }],
+    githubId: {
+      type: String,
+      sparse: true,
+      unique: true,
+      required: false,
+      index: true
+    },
+    onedriveId: {
+      type: String,
+      sparse: true,
+      unique: true,
+      required: false,
+      index: true
+    },
+    dropboxId: {
+      type: String,
+      sparse: true,
+      unique: true,
+      required: false,
+      index: true
+    },
+    dropboxAccessToken: {
+      type: String,
+      required: false,
+      select: false
+    },
+    dropboxRefreshToken: {
+      type: String,
+      required: false,
+      select: false
+    },
+    dropboxTokenExpiry: {
+      type: Date,
+      required: false
+    },
+    onedriveAccessToken: {
+      type: String,
+      required: false,
+      select: false
+    },
+    onedriveRefreshToken: {
+      type: String,
+      required: false,
+      select: false
+    },
+    onedriveTokenExpiry: {
+      type: Date,
+      required: false
+    },
     picture: {
       type: String,
       required: false
@@ -38,11 +105,15 @@ const UserSchema = new mongoose.Schema(
       type: Date,
       default: Date.now
     },
-    authMethod: {
+    authMethods: [{
       type: String,
-      enum: ["local", "google", "github"],
-      default: "local",
-    },
+      enum: ["local", "google", "github", "onedrive", "dropbox"],
+      default: ["local"]
+    }],
+    projects: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Project'
+    }]
   },
   { 
     timestamps: true,
