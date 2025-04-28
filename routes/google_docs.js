@@ -1,15 +1,20 @@
 const express = require("express");
 const { google } = require("googleapis");
 const router = express.Router();
+const UserConnection = require("../models/UserConnection");
 
-// Utility to extract doc ID from URL
-function extractDocIdFromUrl(url) {
-  const pattern = /\/d\/([a-zA-Z0-9-_]+)/;
-  const match = url.match(pattern);
-  return match ? match[1] : null;
-}
+// Get Google Access Token
+const getUserGoogleAccessToken = async (userId) => {
+  const userConnection = await UserConnection.findOne({ userId }).select(
+    "googleAccessToken"
+  );
+  if (!userConnection || !userConnection.googleAccessToken) {
+    throw new Error("Google access token not found for user");
+  }
+  return userConnection.googleAccessToken;
+};
 
-// Utility to convert UTC time to local (Asia/Kolkata)
+// Convert UTC to local (Asia/Kolkata)
 function convertUtcToLocal(utcTimestamp) {
   try {
     const utcDate = new Date(utcTimestamp);
@@ -21,17 +26,18 @@ function convertUtcToLocal(utcTimestamp) {
   }
 }
 
-// Main API to get document changes
-router.get("/:userId/:docUrl/doc-changes", async (req, res) => {
-  const { userId, docUrl } = req.params;
-  const token = req.headers.authorization?.split(" ")[1]; // Bearer token
-
-  if (!docUrl || !token) {
-    return res.status(400).json({ error: "Missing docUrl or token" });
-  }
+// Main API
+router.get("/:userId/:docId/doc-changes", async (req, res) => {
+  const { userId, docId } = req.params;
 
   try {
-    // Setup auth client
+    const token = await getUserGoogleAccessToken(userId);
+
+    if (!docId || !token) {
+      return res.status(400).json({ error: "Missing docId or token" });
+    }
+
+    // Setup OAuth client
     const oauth2Client = new google.auth.OAuth2();
     oauth2Client.setCredentials({ access_token: token });
 
@@ -40,11 +46,6 @@ router.get("/:userId/:docUrl/doc-changes", async (req, res) => {
       version: "v2",
       auth: oauth2Client,
     });
-
-    const docId = extractDocIdFromUrl(docUrl);
-    if (!docId) {
-      return res.status(400).json({ error: "Invalid Google Doc URL" });
-    }
 
     // Fetch document
     const document = await docs.documents.get({
@@ -57,7 +58,7 @@ router.get("/:userId/:docUrl/doc-changes", async (req, res) => {
 
     const changes = [];
 
-    // Recursive function to process the document body
+    // Process document body
     function processElement(element, path = "") {
       if (element.paragraph?.elements) {
         element.paragraph.elements.forEach((elem) => {
@@ -65,7 +66,7 @@ router.get("/:userId/:docUrl/doc-changes", async (req, res) => {
             changes.push({
               type: "suggestion",
               text: elem.textRun.content || "",
-              suggested_by: "Unknown", // You can fetch author info separately if needed
+              suggested_by: "Unknown",
               revision_id: currentRevisionId,
             });
           }
@@ -90,10 +91,10 @@ router.get("/:userId/:docUrl/doc-changes", async (req, res) => {
       }
     }
 
-    // Process the document
+    // Process the document content
     content.forEach((element) => processElement(element));
 
-    // Fetch document activity (Drive Activity API)
+    // Fetch Drive Activity
     try {
       const activityResponse = await driveActivity.activity.query({
         requestBody: {
@@ -110,7 +111,6 @@ router.get("/:userId/:docUrl/doc-changes", async (req, res) => {
         let actionType =
           Object.keys(firstActivity.primaryActionDetail || {})[0] || "Unknown";
 
-        // Map action types
         const actionMap = {
           edit: "Document Edited",
           create: "Document Created",
@@ -162,7 +162,7 @@ router.get("/:userId/:docUrl/doc-changes", async (req, res) => {
       current_revision_id: currentRevisionId,
     });
   } catch (error) {
-    console.error(error.message);
+    console.error("Error in doc-changes API:", error.message);
     return res.status(500).json({ error: "Failed to fetch document changes" });
   }
 });
