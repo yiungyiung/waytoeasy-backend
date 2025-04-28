@@ -4,6 +4,7 @@ const User = require("../models/User");
 const UserConnection = require("../models/UserConnection");
 const DropboxFile = require("../models/DropboxFile");
 const mongoose = require("mongoose");
+const File = require("../models/File");
 
 const router = express.Router();
 
@@ -514,6 +515,77 @@ router.post("/paper/webhook", async (req, res) => {
   } catch (error) {
     console.error("Error processing Paper webhook:", error);
     res.status(500).json({ error: "Error processing webhook" });
+  }
+});
+
+// Get Dropbox file details
+router.get("/files/details", async (req, res) => {
+  try {
+    const { fileId } = req.query;
+    console.log("Received request for file details with fileId:", fileId);
+
+    if (!mongoose.Types.ObjectId.isValid(fileId)) {
+      console.log("Invalid fileId format:", fileId);
+      return res.status(400).json({ error: "Invalid fileId format" });
+    }
+
+    // First find the File record
+    const File = require("../models/File");
+    console.log("Looking for File record with _id:", fileId);
+    const fileRecord = await File.findById(fileId);
+    
+    if (!fileRecord) {
+      console.log("No File record found for fileId:", fileId);
+      return res.status(404).json({ error: "File not found" });
+    }
+
+    console.log("Found File record:", {
+      _id: fileRecord._id,
+      title: fileRecord.title,
+      url: fileRecord.url,
+      projectId: fileRecord.projectId
+    });
+
+    // Extract the Dropbox file ID from the URL
+    const dropboxFileId = fileRecord.url.split('/').pop().split('?')[0];
+    console.log("Extracted Dropbox file ID:", dropboxFileId);
+
+    // Then find the corresponding DropboxFile using the fileId
+    console.log("Looking for DropboxFile with:", {
+      projectId: fileRecord.projectId,
+      fileId: dropboxFileId
+    });
+    
+    const dropboxFile = await DropboxFile.findOne({ 
+      projectId: fileRecord.projectId,
+      fileId: dropboxFileId
+    });
+
+    console.log("Found Dropbox file:", dropboxFile ? {
+      _id: dropboxFile._id,
+      fileId: dropboxFile.fileId,
+      name: dropboxFile.name,
+      webUrl: dropboxFile.webUrl,
+      ownerId: dropboxFile.ownerId
+    } : null);
+
+    if (!dropboxFile) {
+      console.log("No Dropbox file found for:", { 
+        projectId: fileRecord.projectId, 
+        fileId: dropboxFileId 
+      });
+      return res.status(404).json({ error: "Dropbox file not found" });
+    }
+
+    res.json({ 
+      success: true, 
+      file: dropboxFile,
+      projectId: fileRecord.projectId,
+      ownerId: dropboxFile.ownerId
+    });
+  } catch (error) {
+    console.error("Error fetching Dropbox file details:", error);
+    res.status(500).json({ error: "Error fetching Dropbox file details" });
   }
 });
 

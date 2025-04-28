@@ -34,6 +34,7 @@ const linkType = require("./routes/linkTypeRoutes");
 const projectRoutes = require("./routes/projectRoutes");
 const userRoutes = require("./routes/userRoutes");
 const dropboxRoutes = require("./routes/dropboxRoutes");
+const githubrepo = require("./routes/github_repo");
 
 // Seed link types
 const seedLinkTypes = require("./utils/seedLinkTypes");
@@ -46,6 +47,7 @@ app.use("/api/v1/link-types", linkType);
 app.use("/api/v1/projects", projectRoutes);
 app.use("/api/v1/users", userRoutes);
 app.use("/api/v1/dropbox", dropboxRoutes);
+app.use("/api/v1/repo", githubrepo);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
