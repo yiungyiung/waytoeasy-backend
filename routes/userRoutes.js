@@ -39,11 +39,13 @@ router.get("/:userId/connections", async (req, res) => {
 // OAuth callback handler for Google (Backend receives redirect from Google)
 router.get("/oauth2callback", async (req, res) => {
   try {
-    const { code, state, error: googleError } = req.query; // Get code, state, and potential Google error
+    console.log("[DEBUG] Received Google OAuth callback"); // [DEBUG]
+
+    const { code, state, error: googleError } = req.query;
+    console.log("[DEBUG] Query params:", { code, state, googleError }); // [DEBUG]
 
     if (googleError) {
-      console.error("Google OAuth error received:", googleError);
-      // Redirect back to frontend settings with the error
+      console.error("[ERROR] Google OAuth error received:", googleError);
       return res.redirect(
         `${process.env.FRONTEND_URL}settings?error=${encodeURIComponent(
           `Google OAuth Error: ${googleError}`
@@ -52,8 +54,7 @@ router.get("/oauth2callback", async (req, res) => {
     }
 
     if (!code) {
-      // This case should ideally be covered by googleError check, but as a fallback:
-      console.error("No code received from Google callback");
+      console.error("[ERROR] No code received from Google callback");
       return res.redirect(
         `${process.env.FRONTEND_URL}settings?error=${encodeURIComponent(
           "Failed to receive authorization code from Google"
@@ -62,7 +63,7 @@ router.get("/oauth2callback", async (req, res) => {
     }
 
     if (!state) {
-      console.error("No state parameter received in Google callback");
+      console.error("[ERROR] No state parameter received in Google callback");
       return res.redirect(
         `${process.env.FRONTEND_URL}settings?error=${encodeURIComponent(
           "Missing state parameter in Google callback"
@@ -70,9 +71,11 @@ router.get("/oauth2callback", async (req, res) => {
       );
     }
 
-    const userId = state; // Extract userId from state
+    console.log("[DEBUG] Received valid code and state"); // [DEBUG]
+
+    const userId = state;
     if (!mongoose.Types.ObjectId.isValid(userId)) {
-      console.error("Invalid userId in state parameter:", userId);
+      console.error("[ERROR] Invalid userId in state parameter:", userId);
       return res.redirect(
         `${process.env.FRONTEND_URL}settings?error=${encodeURIComponent(
           "Invalid user ID in callback state"
@@ -80,15 +83,16 @@ router.get("/oauth2callback", async (req, res) => {
       );
     }
 
+    console.log("[DEBUG] userId is valid ObjectId:", userId); // [DEBUG]
+
     // Exchange code for tokens
+    console.log("[DEBUG] Exchanging code for tokens"); // [DEBUG]
     const tokenResponse = await axios.post(
       "https://oauth2.googleapis.com/token",
       {
         code,
         client_id: process.env.GOOGLE_CLIENT_ID,
         client_secret: process.env.GOOGLE_CLIENT_SECRET,
-        // IMPORTANT: redirect_uri here must exactly match the one used to generate the auth URL
-        // It points to THIS backend route.
         redirect_uri: process.env.REACT_APP_API_URL
           ? `${process.env.REACT_APP_API_URL}/users/oauth2callback`
           : `${process.env.Google_redirect}`,
@@ -101,9 +105,17 @@ router.get("/oauth2callback", async (req, res) => {
       }
     );
 
+    console.log("[DEBUG] Token response received:", tokenResponse.data); // [DEBUG]
+
     const { access_token, refresh_token, expires_in } = tokenResponse.data;
 
-    // Get user info from Google (to get googleId)
+    if (!access_token) {
+      console.error("[ERROR] Access token missing in token response");
+      throw new Error("No access token received");
+    }
+
+    // Get user info from Google
+    console.log("[DEBUG] Fetching user info from Google"); // [DEBUG]
     const userInfo = await axios.get(
       "https://www.googleapis.com/oauth2/v3/userinfo",
       {
@@ -111,12 +123,20 @@ router.get("/oauth2callback", async (req, res) => {
       }
     );
 
-    const googleId = userInfo.data.sub;
+    console.log("[DEBUG] User info received:", userInfo.data); // [DEBUG]
 
-    // Find the local user to ensure they exist (optional, but good practice)
+    const googleId = userInfo.data.sub;
+    if (!googleId) {
+      console.error("[ERROR] Google ID not found in user info");
+      throw new Error("Google ID missing");
+    }
+
+    // Find the local user
+    console.log("[DEBUG] Finding user by ID in database"); // [DEBUG]
     const user = await User.findById(userId);
+
     if (!user) {
-      console.error("User not found for userId from state:", userId);
+      console.error("[ERROR] User not found for userId:", userId);
       return res.redirect(
         `${process.env.FRONTEND_URL}settings?error=${encodeURIComponent(
           "Associated user not found."
@@ -124,35 +144,50 @@ router.get("/oauth2callback", async (req, res) => {
       );
     }
 
-    // Update or create user connection document to store tokens and Google ID
+    console.log("[DEBUG] User found:", user.email); // [DEBUG]
+
+    // Update or create UserConnection
+    console.log("[DEBUG] Updating/creating UserConnection"); // [DEBUG]
     await UserConnection.findOneAndUpdate(
-      { userId: new mongoose.Types.ObjectId(userId) }, // Ensure userId is ObjectId
+      { userId: new mongoose.Types.ObjectId(userId) },
       {
         googleId: googleId,
         googleAccessToken: access_token,
-        // Only update refresh token if provided (it's not always returned after the first time)
         ...(refresh_token && { googleRefreshToken: refresh_token }),
         googleTokenExpiry: new Date(Date.now() + expires_in * 1000),
       },
-      { upsert: true, new: true } // Create if not exists, return updated doc
+      { upsert: true, new: true }
     );
 
-    // Update the main User model with googleId and auth method if not already present
+    console.log("[DEBUG] UserConnection updated"); // [DEBUG]
+
+    // Update main User model
+    let updated = false;
     if (!user.googleId) {
       user.googleId = googleId;
+      updated = true;
     }
     if (!user.authMethods.includes("google")) {
       user.authMethods.push("google");
+      updated = true;
     }
-    await user.save();
 
-    // Redirect back to frontend settings page with success flag
-    res.redirect(
-      `${process.env.FRONTEND_URL}settings?google_connected=true` // Remove user_id param
-    );
+    if (updated) {
+      console.log("[DEBUG] Updating User document"); // [DEBUG]
+      await user.save();
+      console.log("[DEBUG] User document updated"); // [DEBUG]
+    } else {
+      console.log("[DEBUG] No updates needed for User document"); // [DEBUG]
+    }
+
+    console.log("[DEBUG] Redirecting back to frontend with success"); // [DEBUG]
+    res.redirect(`${process.env.FRONTEND_URL}settings?google_connected=true`);
   } catch (error) {
-    console.error("Error in Google OAuth callback handler:", error);
-    // Redirect back to frontend settings with an error message
+    console.error(
+      "[ERROR] Caught error in OAuth callback handler:",
+      error.message || error
+    );
+    console.error("[ERROR] Full error object:", error); // [DEBUG]
     res.redirect(
       `${process.env.FRONTEND_URL}settings?error=${encodeURIComponent(
         "Failed to connect Google account. Please try again."
