@@ -42,7 +42,16 @@ router.post("/login", async (req, res) => {
   }
 });
 
-// GitHub Authentication Route
+// GitHub Authentication Routes
+router.get("/github", (req, res) => {
+  const clientId = process.env.GITHUB_CLIENT_ID;
+  const redirectUri = `${process.env.FRONTEND_URL}/auth/github/callback`.replace(/\/+/g, '/');
+  const scope = 'user:email';
+  
+  const githubAuthUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}`;
+  res.redirect(githubAuthUrl);
+});
+
 router.post("/github", authController.githubAuth);
 
 module.exports = router;

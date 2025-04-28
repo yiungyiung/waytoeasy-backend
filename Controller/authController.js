@@ -82,6 +82,7 @@ exports.googleAuth = catchAsync(async (req, res, next) => {
 exports.githubAuth = async (req, res) => {
   try {
     const { code } = req.body;
+    console.log("Received GitHub code:", code);
 
     // Exchange code for access token
     const tokenResponse = await axios.post(
@@ -98,7 +99,12 @@ exports.githubAuth = async (req, res) => {
       }
     );
 
+    console.log("Token response:", tokenResponse.data);
     const { access_token } = tokenResponse.data;
+
+    if (!access_token) {
+      throw new Error("No access token received from GitHub");
+    }
 
     // Get user data from GitHub
     const userResponse = await axios.get("https://api.github.com/user", {
@@ -107,6 +113,7 @@ exports.githubAuth = async (req, res) => {
       },
     });
 
+    console.log("User response:", userResponse.data);
     const { login, name, email, id: githubId, avatar_url: picture } = userResponse.data;
 
     // Get user's email if not provided in the initial response
