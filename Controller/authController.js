@@ -1,10 +1,9 @@
 const axios = require("axios");
 const jwt = require("jsonwebtoken");
-const { promisify } = require("util");
 const catchAsync = require("../utils/catchAsync");
 const AppError = require("../utils/appError");
-const oauth2Client = require("../utils/oauth2client");
 const User = require("../models/User");
+const UserConnection = require("../models/UserConnection");
 
 const signToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
@@ -56,7 +55,15 @@ exports.googleAuth = catchAsync(async (req, res, next) => {
         email,
         googleId,
         picture,
-        authMethods: ["google"]
+        authMethods: ["google"],
+      });
+
+      // Create user connection
+      await UserConnection.create({
+        userId: user._id,
+        googleId,
+        googleAccessToken: credential,
+        googleTokenExpiry: new Date(Date.now() + 3600 * 1000), // 1 hour expiry
       });
     } else {
       // Update existing user
@@ -70,6 +77,17 @@ exports.googleAuth = catchAsync(async (req, res, next) => {
         user.picture = picture;
       }
       await user.save();
+
+      // Update or create user connection
+      await UserConnection.findOneAndUpdate(
+        { userId: user._id },
+        {
+          googleId,
+          googleAccessToken: credential,
+          googleTokenExpiry: new Date(Date.now() + 3600 * 1000),
+        },
+        { upsert: true, new: true }
+      );
     }
 
     createSendToken(user, 200, res);
@@ -114,7 +132,13 @@ exports.githubAuth = async (req, res) => {
     });
 
     console.log("User response:", userResponse.data);
-    const { login, name, email, id: githubId, avatar_url: picture } = userResponse.data;
+    const {
+      login,
+      name,
+      email,
+      id: githubId,
+      avatar_url: picture,
+    } = userResponse.data;
 
     // Get user's email if not provided in the initial response
     let userEmail = email;
@@ -141,7 +165,15 @@ exports.githubAuth = async (req, res) => {
         email: userEmail,
         githubId,
         picture,
-        authMethods: ["github"]
+        authMethods: ["github"],
+      });
+
+      // Create user connection
+      await UserConnection.create({
+        userId: user._id,
+        githubId,
+        githubAccessToken: access_token,
+        githubTokenExpiry: new Date(Date.now() + 3600 * 1000), // 1 hour expiry
       });
     } else {
       // Update existing user
@@ -155,6 +187,17 @@ exports.githubAuth = async (req, res) => {
         user.picture = picture;
       }
       await user.save();
+
+      // Update or create user connection
+      await UserConnection.findOneAndUpdate(
+        { userId: user._id },
+        {
+          githubId,
+          githubAccessToken: access_token,
+          githubTokenExpiry: new Date(Date.now() + 3600 * 1000),
+        },
+        { upsert: true, new: true }
+      );
     }
 
     createSendToken(user, 200, res);
